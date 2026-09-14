@@ -400,6 +400,29 @@ const RecTy *llvm::resolveTypes(const RecTy *T1, const RecTy *T2) {
       return resolveRecordTypes(RecTy1, RecTy2);
   }
 
+  // Two differently-bounded class types meet at their nearest common bound, so
+  // that a list of class values such as [FmtA, FmtB] deduces list<class<Fmt>>
+  // rather than failing. Falls back to the unbounded `class`.
+  if (const auto *ClassTy1 = dyn_cast<ClassRecTy>(T1)) {
+    if (const auto *ClassTy2 = dyn_cast<ClassRecTy>(T2)) {
+      const Record *B1 = ClassTy1->getBound();
+      const Record *B2 = ClassTy2->getBound();
+      if (!B1 || !B2)
+        return ClassRecTy::get(T1->getRecordKeeper(), nullptr);
+      if (B1 == B2 || B1->isSubClassOf(B2))
+        return ClassTy2;
+      if (B2->isSubClassOf(B1))
+        return ClassTy1;
+      // Otherwise walk B1's superclasses for the most derived one that B2 also
+      // satisfies. Superclasses are ordered base-first, so the last hit wins.
+      const Record *Common = nullptr;
+      for (const auto &[Super, Loc] : B1->getDirectSuperClasses())
+        if (B2->isSubClassOf(Super))
+          Common = Super;
+      return ClassRecTy::get(T1->getRecordKeeper(), Common);
+    }
+  }
+
   assert(T1 != nullptr && "Invalid record type");
   if (T1->typeIsConvertibleTo(T2))
     return T2;

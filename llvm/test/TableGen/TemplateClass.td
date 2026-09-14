@@ -69,8 +69,20 @@ def OutLet : Plain<7>;
 
 
 
+// A list of class values deduces the nearest common bound of its elements, so
+// class-valued lists can be built and passed around.
+class ListOther { int Z = 0; }
+def ClassList {
+  list<class<Fmt>> Formats = [FmtA, FmtB];
+  list<class> Any = [FmtA, ListOther];
+}
+
 // Defs are printed in name order, so every expectation lives here in that
 // order rather than beside the definition it describes.
+
+// CHECK:      def ClassList {
+// CHECK-NEXT:   list<class<Fmt>> Formats = [FmtA, FmtB];
+// CHECK-NEXT:   list<class> Any = [FmtA, ListOther];
 
 // CHECK:      def D1 {	// Base Simple Simple$0
 // CHECK-NEXT:   int K = 1;
