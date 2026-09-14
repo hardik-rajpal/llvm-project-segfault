@@ -1761,235 +1761,47 @@ class InstVSI<bits<16> op, dag outs, dag ins, string asmstr, list<dag> pattern>
 // Instruction classes for .insn directives
 //===----------------------------------------------------------------------===//
 
-class DirectiveInsnE<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstE<0, outs, ins, asmstr, pattern> {
-  bits<16> enc;
+// A .insn directive instruction. The assembler-specified encoding `enc` is
+// spliced into the instruction word at `slice`, leaving the operand fields
+// that `Fmt` defines to be filled in normally.
+//
+// The instruction format, opcode, encoding width and spliced bit range are all
+// template arguments, so this single class covers every .insn form. It
+// replaces thirty classes that differed only in those four values -- most of
+// them byte-identical apart from the base class, which is exactly the axis
+// TableGen could not parameterize before `template class`.
+template class DirectiveInsn<class<InstSystemZ> Fmt, int opcode, int width,
+                             list<int> slice, dag outs, dag ins, string asmstr,
+                             list<dag> pattern>
+  : Fmt<opcode, outs, ins, asmstr, pattern> {
+  bits<width> enc;
 
-  let Inst = enc;
+  let Inst{slice} = enc{slice};
 }
 
-class DirectiveInsnRI<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRIa<0, outs, ins, asmstr, pattern> {
-  bits<32> enc;
+// Bit ranges spliced by the .insn forms, named by width and position. Written
+// ascending because `let Inst{s} = enc{s}` pairs the two sides element-wise,
+// so only the set of indices matters, not their order.
+defvar InsnEnc48Hi8Lo8  = !listconcat(!range(40, 48), !range(0, 8));  // 47-40, 7-0
+defvar InsnEnc48Hi8     = !range(40, 48);                             // 47-40
+defvar InsnEnc48Hi16    = !range(32, 48);                             // 47-32
+defvar InsnEnc48Hi8Mid4 = !listconcat(!range(40, 48), !range(32, 36));// 47-40, 35-32
+defvar InsnEnc32Hi8     = !range(24, 32);                             // 31-24
+defvar InsnEnc32Hi8Mid4 = !listconcat(!range(24, 32), !range(16, 20));// 31-24, 19-16
+defvar InsnEnc32Hi16    = !range(16, 32);                             // 31-16
+defvar InsnEnc16Hi8     = !range(8, 16);                              // 15-8
+defvar InsnEnc16All     = !range(0, 16);                              // 15-0
 
-  let Inst{31-24} = enc{31-24};
-  let Inst{19-16} = enc{19-16};
-}
-
-class DirectiveInsnRIE<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRIEd<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
+// The two forms that carry something beyond the shared shape.
 class DirectiveInsnRIL<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRILa<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
+  : DirectiveInsn<InstRILa, 0, 48, InsnEnc48Hi8Mid4, outs, ins, asmstr,
+                  pattern> {
   string type;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{35-32} = enc{35-32};
-}
-
-class DirectiveInsnRIS<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRIS<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnRR<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRR<0, outs, ins, asmstr, pattern> {
-  bits<16> enc;
-
-  let Inst{15-8} = enc{15-8};
-}
-
-class DirectiveInsnRRE<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRRE<0, outs, ins, asmstr, pattern> {
-  bits<32> enc;
-
-  let Inst{31-16} = enc{31-16};
-}
-
-class DirectiveInsnRRF<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRRFa<0, outs, ins, asmstr, pattern> {
-  bits<32> enc;
-
-  let Inst{31-16} = enc{31-16};
-}
-
-class DirectiveInsnRRS<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRRS<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnRS<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRSa<0, outs, ins, asmstr, pattern> {
-  bits<32> enc;
-
-  let Inst{31-24} = enc{31-24};
-}
-
-class DirectiveInsnRSE<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRSEa<6, outs, ins, asmstr, pattern> {
-  bits <48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnRSI<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRSI<0, outs, ins, asmstr, pattern> {
-  bits<32> enc;
-
-  let Inst{31-24} = enc{31-24};
-}
-
-class DirectiveInsnRSY<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRSYa<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnRX<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRXa<0, outs, ins, asmstr, pattern> {
-  bits<32> enc;
-
-  let Inst{31-24} = enc{31-24};
 }
 
 class DirectiveInsnRXE<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRXE<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
+  : DirectiveInsn<InstRXE, 0, 48, InsnEnc48Hi8Lo8, outs, ins, asmstr, pattern> {
   let M3 = 0;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnRXF<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRXF<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnRXY<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstRXYa<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnS<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstS<0, outs, ins, asmstr, pattern> {
-  bits<32> enc;
-
-  let Inst{31-16} = enc{31-16};
-}
-
-class DirectiveInsnSI<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstSI<0, outs, ins, asmstr, pattern> {
-  bits<32> enc;
-
-  let Inst{31-24} = enc{31-24};
-}
-
-class DirectiveInsnSIY<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstSIY<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnSIL<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstSIL<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-32} = enc{47-32};
-}
-
-class DirectiveInsnSS<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstSSd<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-}
-
-class DirectiveInsnSSE<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstSSE<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-32} = enc{47-32};
-}
-
-class DirectiveInsnSSF<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstSSF<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{35-32} = enc{35-32};
-}
-
-class DirectiveInsnVRI<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstVRIe<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnVRR<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstVRRc<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnVRS<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstVRSc<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnVRV<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstVRV<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnVRX<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstVRX<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
-}
-
-class DirectiveInsnVSI<dag outs, dag ins, string asmstr, list<dag> pattern>
-  : InstVSI<0, outs, ins, asmstr, pattern> {
-  bits<48> enc;
-
-  let Inst{47-40} = enc{47-40};
-  let Inst{7-0}   = enc{7-0};
 }
 
 

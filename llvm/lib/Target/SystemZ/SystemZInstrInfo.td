@@ -2276,11 +2276,11 @@ let hasSideEffects = 1 in {
 //===----------------------------------------------------------------------===//
 
 let isCodeGenOnly = 1, hasSideEffects = 1 in {
-  def InsnE   : DirectiveInsnE<(outs), (ins imm64zx16:$enc), ".insn e,$enc", []>;
-  def InsnRI  : DirectiveInsnRI<(outs), (ins imm64zx32:$enc, AnyReg:$R1,
+  def InsnE   : DirectiveInsn<InstE, 0, 16, InsnEnc16All, (outs), (ins imm64zx16:$enc), ".insn e,$enc", []>;
+  def InsnRI  : DirectiveInsn<InstRIa, 0, 32, InsnEnc32Hi8Mid4, (outs), (ins imm64zx32:$enc, AnyReg:$R1,
                                              imm32sx16:$I2),
                                 ".insn ri,$enc,$R1,$I2", []>;
-  def InsnRIE : DirectiveInsnRIE<(outs), (ins imm64zx48:$enc, AnyReg:$R1,
+  def InsnRIE : DirectiveInsn<InstRIEd, 0, 48, InsnEnc48Hi8Lo8, (outs), (ins imm64zx48:$enc, AnyReg:$R1,
                                               AnyReg:$R3, brtarget16:$I2),
                                  ".insn rie,$enc,$R1,$R3,$I2", []>;
   def InsnRIL : DirectiveInsnRIL<(outs), (ins imm64zx48:$enc, AnyReg:$R1,
@@ -2289,104 +2289,104 @@ let isCodeGenOnly = 1, hasSideEffects = 1 in {
   def InsnRILU : DirectiveInsnRIL<(outs), (ins imm64zx48:$enc, AnyReg:$R1,
                                                uimm32:$I2),
                                   ".insn rilu,$enc,$R1,$I2", []>;
-  def InsnRIS : DirectiveInsnRIS<(outs),
+  def InsnRIS : DirectiveInsn<InstRIS, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, AnyReg:$R1,
                                       imm32sx8:$I2, imm32zx4:$M3,
                                       (bdaddr12only $B4, $D4):$BD4),
                                  ".insn ris,$enc,$R1,$I2,$M3,$BD4", []>;
-  def InsnRR : DirectiveInsnRR<(outs),
+  def InsnRR : DirectiveInsn<InstRR, 0, 16, InsnEnc16Hi8, (outs),
                                (ins imm64zx16:$enc, AnyReg:$R1, AnyReg:$R2),
                                ".insn rr,$enc,$R1,$R2", []>;
-  def InsnRRE : DirectiveInsnRRE<(outs), (ins imm64zx32:$enc,
+  def InsnRRE : DirectiveInsn<InstRRE, 0, 32, InsnEnc32Hi16, (outs), (ins imm64zx32:$enc,
                                               AnyReg:$R1, AnyReg:$R2),
                                  ".insn rre,$enc,$R1,$R2", []>;
-  def InsnRRF : DirectiveInsnRRF<(outs),
+  def InsnRRF : DirectiveInsn<InstRRFa, 0, 32, InsnEnc32Hi16, (outs),
                                  (ins imm64zx32:$enc, AnyReg:$R1, AnyReg:$R2,
                                       AnyReg:$R3, imm32zx4:$M4),
                                  ".insn rrf,$enc,$R1,$R2,$R3,$M4", []>;
-  def InsnRRS : DirectiveInsnRRS<(outs),
+  def InsnRRS : DirectiveInsn<InstRRS, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, AnyReg:$R1,
                                       AnyReg:$R2, imm32zx4:$M3,
                                       (bdaddr12only $B4, $D4):$BD4),
                                  ".insn rrs,$enc,$R1,$R2,$M3,$BD4", []>;
-  def InsnRS  : DirectiveInsnRS<(outs),
+  def InsnRS  : DirectiveInsn<InstRSa, 0, 32, InsnEnc32Hi8, (outs),
                                 (ins imm64zx32:$enc, AnyReg:$R1,
                                      AnyReg:$R3, (bdaddr12only $B2, $D2):$BD2),
                                 ".insn rs,$enc,$R1,$R3,$BD2", []>;
-  def InsnRSE : DirectiveInsnRSE<(outs),
+  def InsnRSE : DirectiveInsn<InstRSEa, 6, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, AnyReg:$R1,
                                       AnyReg:$R3, (bdaddr12only $B2, $D2):$BD2),
                                  ".insn rse,$enc,$R1,$R3,$BD2", []>;
-  def InsnRSI : DirectiveInsnRSI<(outs),
+  def InsnRSI : DirectiveInsn<InstRSI, 0, 32, InsnEnc32Hi8, (outs),
                                  (ins imm64zx48:$enc, AnyReg:$R1,
                                       AnyReg:$R3, brtarget16:$RI2),
                                  ".insn rsi,$enc,$R1,$R3,$RI2", []>;
-  def InsnRSY : DirectiveInsnRSY<(outs),
+  def InsnRSY : DirectiveInsn<InstRSYa, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, AnyReg:$R1,
                                       AnyReg:$R3, (bdaddr20only $B2, $D2):$BD2),
                                  ".insn rsy,$enc,$R1,$R3,$BD2", []>;
-  def InsnRX  : DirectiveInsnRX<(outs), (ins imm64zx32:$enc, AnyReg:$R1,
+  def InsnRX  : DirectiveInsn<InstRXa, 0, 32, InsnEnc32Hi8, (outs), (ins imm64zx32:$enc, AnyReg:$R1,
                                              (bdxaddr12only $B2, $D2, $X2):$XBD2),
                                 ".insn rx,$enc,$R1,$XBD2", []>;
   def InsnRXE : DirectiveInsnRXE<(outs), (ins imm64zx48:$enc, AnyReg:$R1,
                                               (bdxaddr12only $B2, $D2, $X2):$XBD2),
                                  ".insn rxe,$enc,$R1,$XBD2", []>;
-  def InsnRXF : DirectiveInsnRXF<(outs),
+  def InsnRXF : DirectiveInsn<InstRXF, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, AnyReg:$R1,
                                       AnyReg:$R3, (bdxaddr12only $B2, $D2, $X2):$XBD2),
                                  ".insn rxf,$enc,$R1,$R3,$XBD2", []>;
-  def InsnRXY : DirectiveInsnRXY<(outs), (ins imm64zx48:$enc, AnyReg:$R1,
+  def InsnRXY : DirectiveInsn<InstRXYa, 0, 48, InsnEnc48Hi8Lo8, (outs), (ins imm64zx48:$enc, AnyReg:$R1,
                                               (bdxaddr20only $B2, $D2, $X2):$XBD2),
                                  ".insn rxy,$enc,$R1,$XBD2", []>;
-  def InsnS : DirectiveInsnS<(outs),
+  def InsnS : DirectiveInsn<InstS, 0, 32, InsnEnc32Hi16, (outs),
                              (ins imm64zx32:$enc, (bdaddr12only $B2, $D2):$BD2),
                              ".insn s,$enc,$BD2", []>;
-  def InsnSI : DirectiveInsnSI<(outs),
+  def InsnSI : DirectiveInsn<InstSI, 0, 32, InsnEnc32Hi8, (outs),
                                (ins imm64zx32:$enc, (bdaddr12only $B1, $D1):$BD1,
                                     imm32sx8:$I2),
                                ".insn si,$enc,$BD1,$I2", []>;
-  def InsnSIY : DirectiveInsnSIY<(outs),
+  def InsnSIY : DirectiveInsn<InstSIY, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc,
                                       (bdaddr20only $B1, $D1):$BD1, imm32zx8:$I2),
                                  ".insn siy,$enc,$BD1,$I2", []>;
-  def InsnSIL : DirectiveInsnSIL<(outs),
+  def InsnSIL : DirectiveInsn<InstSIL, 0, 48, InsnEnc48Hi16, (outs),
                                  (ins imm64zx48:$enc, (bdaddr12only $B1, $D1):$BD1,
                                       imm32zx16:$I2),
                                  ".insn sil,$enc,$BD1,$I2", []>;
-  def InsnSS : DirectiveInsnSS<(outs),
+  def InsnSS : DirectiveInsn<InstSSd, 0, 48, InsnEnc48Hi8, (outs),
                                (ins imm64zx48:$enc, (bdraddr12only $B1, $D1, $R1):$RBD1,
                                     (bdaddr12only $B2, $D2):$BD2, AnyReg:$R3),
                                ".insn ss,$enc,$RBD1,$BD2,$R3", []>;
-  def InsnSSE : DirectiveInsnSSE<(outs),
+  def InsnSSE : DirectiveInsn<InstSSE, 0, 48, InsnEnc48Hi16, (outs),
                                  (ins imm64zx48:$enc,
                                       (bdaddr12only $B1, $D1):$BD1,(bdaddr12only $B2, $D2):$BD2),
                                  ".insn sse,$enc,$BD1,$BD2", []>;
-  def InsnSSF : DirectiveInsnSSF<(outs),
+  def InsnSSF : DirectiveInsn<InstSSF, 0, 48, InsnEnc48Hi8Mid4, (outs),
                                  (ins imm64zx48:$enc, (bdaddr12only $B1, $D1):$BD1,
                                       (bdaddr12only $B2, $D2):$BD2, AnyReg:$R3),
                                  ".insn ssf,$enc,$BD1,$BD2,$R3", []>;
-  def InsnVRI : DirectiveInsnVRI<(outs),
+  def InsnVRI : DirectiveInsn<InstVRIe, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, VR128:$V1, VR128:$V2,
                                   imm32zx12:$I3, imm32zx4:$M4, imm32zx4:$M5),
                                  ".insn vri,$enc,$V1,$V2,$I3,$M4,$M5", []>;
-  def InsnVRR : DirectiveInsnVRR<(outs),
+  def InsnVRR : DirectiveInsn<InstVRRc, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, VR128:$V1, VR128:$V2,
                                   VR128:$V3, imm32zx4:$M4, imm32zx4:$M5,
                                   imm32zx4:$M6),
                                   ".insn vrr,$enc,$V1,$V2,$V3,$M4,$M5,$M6", []>;
-  def InsnVRS : DirectiveInsnVRS<(outs),
+  def InsnVRS : DirectiveInsn<InstVRSc, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, AnyReg:$R1, VR128:$V3,
                                   (bdaddr12only $B2, $D2):$BD2, imm32zx4:$M4),
                                  ".insn vrs,$enc,$BD2,$M4", []>;
-  def InsnVRV : DirectiveInsnVRV<(outs),
+  def InsnVRV : DirectiveInsn<InstVRV, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, VR128:$V1,
                                       (bdvaddr12only $B2, $D2, $V2):$VBD2, imm32zx4:$M3),
                                  ".insn vrv,$enc,$V1,$VBD2,$M3", []>;
-  def InsnVRX : DirectiveInsnVRX<(outs),
+  def InsnVRX : DirectiveInsn<InstVRX, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, VR128:$V1,
                                   (bdxaddr12only $B2, $D2, $X2):$XBD2, imm32zx4:$M3),
                                  ".insn vrx,$enc,$V1,$XBD2,$M3", []>;
-  def InsnVSI : DirectiveInsnVSI<(outs),
+  def InsnVSI : DirectiveInsn<InstVSI, 0, 48, InsnEnc48Hi8Lo8, (outs),
                                  (ins imm64zx48:$enc, VR128:$V1,
                                   (bdaddr12only $B2, $D2):$BD2, imm32zx8:$I3),
                                   ".insn vsi,$enc,$V1,$BD2,$I3", []>;
