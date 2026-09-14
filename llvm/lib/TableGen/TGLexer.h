@@ -101,7 +101,8 @@ enum TokKind {
   If,
   Let,
   MultiClass,
-  OBJECT_START_LAST = MultiClass,
+  Template,
+  OBJECT_START_LAST = Template,
 
   // Bang operators.
   BANG_OPERATOR_FIRST,
@@ -477,6 +478,53 @@ private:
   // stack. This means there is no matching #endif for the previous
   // #ifdef/#else.
   void prepReportPreprocessorStackError();
+
+public:
+  /// A complete snapshot of the lexer's position and token state, sufficient
+  /// to resume lexing exactly where it left off. Used by `template class` to
+  /// re-lex a stored class body at each instantiation and then return to the
+  /// use site. Nested inside TGLexer so it can name PreprocessorControlDesc.
+  struct State {
+    const char *CurPtr;
+    StringRef CurBuf;
+    const char *TokStart;
+    tgtok::TokKind CurCode;
+    std::string CurStrVal;
+    int64_t CurIntVal;
+    unsigned CurBuffer;
+    SmallVector<SmallVector<PreprocessorControlDesc>> PrepIncludeStack;
+  };
+
+  State saveState() const {
+    return State{CurPtr,    CurBuf,    TokStart,        CurCode,
+                 CurStrVal, CurIntVal, CurBuffer,       PrepIncludeStack};
+  }
+
+  void restoreState(State S) {
+    CurPtr = S.CurPtr;
+    CurBuf = S.CurBuf;
+    TokStart = S.TokStart;
+    CurCode = S.CurCode;
+    CurStrVal = std::move(S.CurStrVal);
+    CurIntVal = S.CurIntVal;
+    CurBuffer = S.CurBuffer;
+    PrepIncludeStack = std::move(S.PrepIncludeStack);
+  }
+
+  /// Reposition the lexer to Pos, which must lie within the buffer that was
+  /// current when the position was captured, and prime the first token.
+  void seekTo(const char *Pos, StringRef Buf, unsigned Buffer) {
+    CurBuf = Buf;
+    CurBuffer = Buffer;
+    CurPtr = Pos;
+    TokStart = Pos;
+    Lex();
+  }
+
+  /// Start of the current token's text, and the current buffer it lives in.
+  const char *getTokStart() const { return TokStart; }
+  StringRef getCurBuf() const { return CurBuf; }
+  unsigned getCurBuffer() const { return CurBuffer; }
 };
 
 } // end namespace llvm

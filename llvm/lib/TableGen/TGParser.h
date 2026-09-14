@@ -14,6 +14,7 @@
 #define LLVM_LIB_TABLEGEN_TGPARSER_H
 
 #include "TGLexer.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
 #include <map>
@@ -103,6 +104,38 @@ struct MultiClass {
       : Rec(Name, Loc, Records, Record::RK_MultiClass) {}
 };
 
+/// TemplateClass - A `template class` whose body has been captured but not
+/// parsed. Each distinct tuple of argument values causes the body to be
+/// re-lexed and parsed into a fresh, fully concrete class Record, so that
+/// everything downstream of AddSubClass sees only ordinary classes.
+struct TemplateClass {
+  /// Placeholder holding the name and the parsed template arguments, mirroring
+  /// MultiClass::Rec. Not registered with the RecordKeeper.
+  Record Rec;
+
+  /// The field-less class Record registered under the template's own name.
+  /// Every instantiation inherits it, so `isSubClassOf("W")` keeps working
+  /// even though the instantiated class is named `W$0`.
+  Record *Primary = nullptr;
+
+  /// Position of the first token of the captured base-class list and body
+  /// (a ':', '{' or ';'), plus the buffer it lives in.
+  const char *BodyStart = nullptr;
+  StringRef BodyBuf;
+  unsigned BodyBuffer = 0;
+
+  /// Unqualified template argument names, in declaration order. The names on
+  /// Rec are qualified ("W:Fmt"); these are what the body actually references.
+  SmallVector<std::string, 8> ArgNames;
+
+  /// Instantiations, keyed on the printed form of the argument tuple.
+  StringMap<Record *> Cache;
+  unsigned NextInstance = 0;
+
+  TemplateClass(StringRef Name, SMLoc Loc, RecordKeeper &Records)
+      : Rec(Name, Loc, Records, Record::RK_Class) {}
+};
+
 class TGVarScope {
 public:
   enum ScopeKind { SK_Local, SK_Record, SK_ForeachLoop, SK_MultiClass };
@@ -158,7 +191,13 @@ class TGParser {
   TGLexer Lex;
   std::vector<SmallVector<LetRecord, 4>> LetStack;
   std::map<std::string, std::unique_ptr<MultiClass>> MultiClasses;
+  std::map<std::string, std::unique_ptr<TemplateClass>> TemplateClasses;
   std::map<std::string, const RecTy *> TypeAliases;
+
+  /// Depth of nested template-class instantiations, to catch runaway
+  /// recursion such as `template class A<...> : A<...>`.
+  unsigned TemplateInstDepth = 0;
+  static constexpr unsigned MaxTemplateInstDepth = 64;
 
   /// Loops - Keep track of any foreach loops we are within.
   ///
@@ -276,6 +315,11 @@ private: // Parser methods.
   bool ParseObjectList(MultiClass *MC = nullptr);
   bool ParseObject(MultiClass *MC);
   bool ParseClass();
+  bool ParseTemplateClass();
+  Record *instantiateTemplateClass(TemplateClass &TC,
+                                   ArrayRef<const ArgumentInit *> Args,
+                                   SMLoc Loc);
+  bool skipCapturedBody();
   bool ParseMultiClass();
   bool ParseDefm(MultiClass *CurMultiClass);
   bool ParseDef(MultiClass *CurMultiClass);

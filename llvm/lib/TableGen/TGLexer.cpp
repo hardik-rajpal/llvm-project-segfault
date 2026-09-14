@@ -436,6 +436,7 @@ tgtok::TokKind TGLexer::LexIdentifier() {
                             .Case("defset", tgtok::Defset)
                             .Case("deftype", tgtok::Deftype)
                             .Case("multiclass", tgtok::MultiClass)
+                            .Case("template", tgtok::Template)
                             .Case("field", tgtok::Field)
                             .Case("let", tgtok::Let)
                             .Case("in", tgtok::In)

@@ -759,6 +759,18 @@ const Record *TGParser::ParseClassID() {
   }
 
   const Record *Result = Records.getClass(Lex.getCurStrVal());
+
+  // A class-valued template argument, bound as a local variable by
+  // instantiateTemplateClass. This single fallback serves both callers:
+  // ParseSubClassReference (`: Fmt<...>`) and ParseType (`Fmt field;`).
+  if (!Result) {
+    const StringInit *VarName = StringInit::get(Records, Lex.getCurStrVal());
+    if (const Init *V = CurScope->getVar(Records, CurMultiClass, VarName,
+                                         Lex.getLocRange(), TrackReferenceLocs))
+      if (const auto *CI = dyn_cast<ClassInit>(V))
+        Result = CI->getClass();
+  }
+
   if (!Result) {
     std::string Msg("Couldn't find class '" + Lex.getCurStrVal() + "'");
     if (MultiClasses[Lex.getCurStrVal()].get())
@@ -808,6 +820,31 @@ SubClassReference TGParser::ParseSubClassReference(Record *CurRec,
     if (MultiClass *MC = ParseMultiClassID())
       Result.Rec = &MC->Rec;
   } else {
+    // A `template class` is instantiated here: its arguments are parsed
+    // against the placeholder record, then the body is re-parsed into a fresh
+    // concrete class. What the caller gets back is an ordinary class taking no
+    // arguments, so every path below AddSubClass is unchanged.
+    if (Lex.getCode() == tgtok::Id) {
+      auto TCIt = TemplateClasses.find(Lex.getCurStrVal());
+      if (TCIt != TemplateClasses.end()) {
+        TemplateClass &TC = *TCIt->second;
+        SMLoc IdLoc = Lex.getLoc();
+        Lex.Lex(); // eat the name
+
+        SmallVector<const ArgumentInit *, 8> Args;
+        SmallVector<SMLoc> ArgLocs;
+        if (consume(tgtok::less)) {
+          if (ParseTemplateArgValueList(Args, ArgLocs, CurRec, &TC.Rec))
+            return Result;
+          if (CheckTemplateArgValues(Args, ArgLocs, &TC.Rec))
+            return Result;
+        }
+
+        Result.Rec = instantiateTemplateClass(TC, Args, IdLoc);
+        Result.RefRange.End = Lex.getLoc();
+        return Result;
+      }
+    }
     Result.Rec = ParseClassID();
   }
   if (!Result.Rec)
@@ -1028,6 +1065,24 @@ bool TGParser::ParseRangePiece(SmallVectorImpl<unsigned> &Ranges,
   if (!CurVal)
     CurVal = ParseValue(nullptr);
 
+  // A list-valued index, e.g. `let Inst{slice} = enc{slice}` where `slice` is
+  // a list<int> template argument. Splat its elements into the range. Both the
+  // assignment target and the value suffix reach this function, so accepting a
+  // list here covers `Inst{slice}` and `enc{slice}` alike.
+  if (const auto *LI = dyn_cast_or_null<ListInit>(CurVal)) {
+    for (const Init *Elt : LI->getElements()) {
+      const auto *EltII = dyn_cast<IntInit>(Elt);
+      if (!EltII)
+        return TokError("expected list of integers in bit range, got list "
+                        "element '" +
+                        Elt->getAsString() + "'");
+      if (EltII->getValue() < 0)
+        return TokError("invalid range, cannot be negative");
+      Ranges.push_back(EltII->getValue());
+    }
+    return false;
+  }
+
   const auto *II = dyn_cast_or_null<IntInit>(CurVal);
   if (!II)
     return TokError("expected integer or bitrange");
@@ -1154,21 +1209,47 @@ const RecTy *TGParser::ParseType() {
     TokError("unknown class name");
     return nullptr;
   }
+  case tgtok::Class: {
+    // 'class' or 'class<Base>' -- the type of a class-valued template
+    // argument, optionally bounded.
+    if (Lex.Lex() != tgtok::less) // Eat 'class'
+      return ClassRecTy::get(Records, nullptr);
+    Lex.Lex(); // Eat '<'
+    const Record *Bound = ParseClassID();
+    if (!Bound)
+      return nullptr;
+    if (!consume(tgtok::greater)) {
+      TokError("expected '>' at end of class<base> type");
+      return nullptr;
+    }
+    return ClassRecTy::get(Records, Bound);
+  }
   case tgtok::Bits: {
     if (Lex.Lex() != tgtok::less) { // Eat 'bits'
       TokError("expected '<' after bits type");
       return nullptr;
     }
-    if (Lex.Lex() != tgtok::IntVal) { // Eat '<'
-      TokError("expected integer in bits<n> type");
+    Lex.Lex(); // Eat '<'
+    // Usually a literal, but under `template class` the width can be any
+    // expression that folds to a non-negative integer at instantiation.
+    SMLoc SizeLoc = Lex.getLoc();
+    const Init *Size = ParseValue(nullptr, IntRecTy::get(Records));
+    if (!Size)
+      return nullptr;
+    const auto *SizeII = dyn_cast<IntInit>(Size);
+    if (!SizeII) {
+      Error(SizeLoc, "expected integer in bits<n> type");
       return nullptr;
     }
-    uint64_t Val = Lex.getCurIntVal();
-    if (Lex.Lex() != tgtok::greater) { // Eat count.
+    int64_t Val = SizeII->getValue();
+    if (Val < 0) {
+      Error(SizeLoc, "invalid bits<n> type, width cannot be negative");
+      return nullptr;
+    }
+    if (!consume(tgtok::greater)) {
       TokError("expected '>' at end of bits<n> type");
       return nullptr;
     }
-    Lex.Lex(); // Eat '>'
     return BitsRecTy::get(Records, Val);
   }
   case tgtok::List: {
@@ -1214,6 +1295,15 @@ const Init *TGParser::ParseIDValue(Record *CurRec, const StringInit *Name,
   if (CurRec && !CurRec->isClass() && !CurMultiClass &&
       CurRec->getNameInit() == Name)
     return UnOpInit::get(UnOpInit::CAST, Name, CurRec->getType());
+
+  // A class named in value position, e.g. the `InstRIEd` in
+  // `def D : W<InstRIEd, ...>`. Classes are Records just as defs are; only the
+  // surface language used to refuse to name one here.
+  if (const Record *Class = Records.getClass(Name->getValue())) {
+    if (TrackReferenceLocs)
+      Class->appendReferenceLoc(NameLoc);
+    return ClassInit::get(Class);
+  }
 
   Error(NameLoc.Start, "Variable not defined: '" + Name->getValue() + "'");
   return nullptr;
@@ -4396,6 +4486,208 @@ bool TGParser::ParseClass() {
   return false;
 }
 
+/// skipCapturedBody - Consume the tokens of a `template class`'s base-class
+/// list and body without parsing them, leaving the lexer just past the
+/// terminating '}' or ';'. Brace depth is tracked over lexed tokens rather
+/// than raw characters, so code fragments, strings and comments take care of
+/// themselves.
+bool TGParser::skipCapturedBody() {
+  unsigned Depth = 0;
+  while (true) {
+    switch (Lex.getCode()) {
+    case tgtok::Eof:
+      return TokError("unterminated template class body");
+    case tgtok::Error:
+      return true;
+    case tgtok::l_brace:
+      ++Depth;
+      break;
+    case tgtok::r_brace:
+      if (Depth == 0)
+        return TokError("unexpected '}' in template class body");
+      if (--Depth == 0) {
+        Lex.Lex(); // eat the '}'
+        return false;
+      }
+      break;
+    case tgtok::semi:
+      if (Depth == 0) {
+        Lex.Lex(); // eat the ';'
+        return false;
+      }
+      break;
+    default:
+      break;
+    }
+    Lex.Lex();
+  }
+}
+
+/// ParseTemplateClass - Parse a `template class` declaration. The template
+/// arguments are parsed normally, but the base-class list and body are stored
+/// unparsed and re-parsed once per distinct argument tuple by
+/// instantiateTemplateClass.
+///
+///   TemplateClass ::= TEMPLATE CLASS ID TemplateArgList? ObjectBody
+///
+bool TGParser::ParseTemplateClass() {
+  assert(Lex.getCode() == tgtok::Template && "Unexpected token!");
+
+  if (Lex.Lex() != tgtok::Class) // eat the 'template'
+    return TokError("expected 'class' after 'template'");
+
+  if (Lex.Lex() != tgtok::Id) // eat the 'class'
+    return TokError("expected class name after 'template class'");
+
+  std::string Name = Lex.getCurStrVal();
+  SMLoc NameLoc = Lex.getLoc();
+
+  if (TemplateClasses.count(Name))
+    return TokError("template class '" + Name + "' already defined");
+  if (Records.getClass(Name))
+    return TokError("there is already a class named '" + Name + "'");
+  if (MultiClasses.count(Name))
+    return TokError("there is already a multiclass named '" + Name + "'");
+  if (TypeAliases.count(Name))
+    return TokError("there is already a defined type alias '" + Name + "'");
+
+  auto TCOwner = std::make_unique<TemplateClass>(Name, NameLoc, Records);
+  TemplateClass *TC = TCOwner.get();
+
+  Lex.Lex(); // eat the name
+
+  // Template arguments are parsed eagerly, onto the placeholder record. Only
+  // the body is deferred.
+  TGVarScope *TCScope = PushScope(&TC->Rec);
+  if (Lex.getCode() == tgtok::less)
+    if (ParseTemplateArgList(&TC->Rec))
+      return true;
+  PopScope(TCScope);
+
+  // The body refers to arguments by their unqualified names; the placeholder
+  // record stores them qualified as "Name:Arg".
+  for (const Init *QualifiedArg : TC->Rec.getTemplateArgs()) {
+    std::string ArgName = QualifiedArg->getAsUnquotedString();
+    assert(StringRef(ArgName).starts_with(Name) &&
+           "template arg is not qualified");
+    TC->ArgNames.push_back(ArgName.substr(Name.size() + 1));
+  }
+
+  // Capture the base-class list and body verbatim.
+  if (Lex.getCode() != tgtok::colon && Lex.getCode() != tgtok::l_brace &&
+      Lex.getCode() != tgtok::semi)
+    return TokError("expected ':', '{' or ';' in template class definition");
+
+  TC->BodyStart = Lex.getTokStart();
+  TC->BodyBuf = Lex.getCurBuf();
+  TC->BodyBuffer = Lex.getCurBuffer();
+  if (skipCapturedBody())
+    return true;
+
+  // A field-less record under the template's own name, inherited by every
+  // instantiation so that isSubClassOf("Name") keeps working.
+  auto PrimaryOwner =
+      std::make_unique<Record>(Name, NameLoc, Records, Record::RK_Class);
+  TC->Primary = PrimaryOwner.get();
+  Records.addClass(std::move(PrimaryOwner));
+
+  TemplateClasses[Name] = std::move(TCOwner);
+  return false;
+}
+
+/// instantiateTemplateClass - Return the concrete class produced by applying
+/// Args to TC, re-parsing the stored body if this argument tuple has not been
+/// seen before. Returns null on error.
+Record *TGParser::instantiateTemplateClass(
+    TemplateClass &TC, ArrayRef<const ArgumentInit *> Args, SMLoc Loc) {
+  if (TemplateInstDepth >= MaxTemplateInstDepth) {
+    Error(Loc, "template class instantiation nested more than " +
+                   Twine(MaxTemplateInstDepth) +
+                   " deep while instantiating '" + TC.Rec.getName() +
+                   "'; is it recursive?");
+    return nullptr;
+  }
+
+  // Map each template argument to its value, applying defaults and reporting
+  // missing or duplicated arguments.
+  DenseMap<const Init *, const Init *> ArgMap;
+  if (resolveArguments(&TC.Rec, Args, Loc,
+                       [&](const Init *Name, const Init *Value) {
+                         ArgMap[Name] = Value;
+                       }))
+    return nullptr;
+
+  // Key the instantiation cache on the printed argument tuple, in declaration
+  // order so the key is canonical regardless of how the use site spelled it.
+  std::string Key;
+  {
+    raw_string_ostream OS(Key);
+    for (const Init *QualifiedArg : TC.Rec.getTemplateArgs())
+      OS << ArgMap.lookup(QualifiedArg)->getAsString() << '\x01';
+  }
+
+  auto Cached = TC.Cache.find(Key);
+  if (Cached != TC.Cache.end())
+    return Cached->second;
+
+  std::string InstName =
+      (TC.Rec.getName() + "$" + Twine(TC.NextInstance++)).str();
+  auto NewRecOwner =
+      std::make_unique<Record>(InstName, Loc, Records, Record::RK_Class);
+  Record *NewRec = NewRecOwner.get();
+
+  // Instantiate in a pristine parser context. In particular the body must not
+  // absorb the let stack of whatever encloses the *use* site: the result is
+  // cached and reused by other uses that are not inside that let.
+  TGLexer::State SavedLex = Lex.saveState();
+  std::vector<SmallVector<LetRecord, 4>> SavedLetStack = std::move(LetStack);
+  std::vector<std::unique_ptr<ForeachLoop>> SavedLoops = std::move(Loops);
+  MultiClass *SavedMultiClass = CurMultiClass;
+  std::unique_ptr<TGVarScope> SavedScope = std::move(CurScope);
+  LetStack.clear();
+  Loops.clear();
+  CurMultiClass = nullptr;
+  CurScope = std::make_unique<TGVarScope>(nullptr);
+  ++TemplateInstDepth;
+
+  // Bind the arguments as ordinary local variables, so the body sees concrete
+  // values in every position -- including the ones the grammar would other-
+  // wise insist on knowing at parse time.
+  TGVarScope *InstScope = PushScope(NewRec);
+  for (auto [QualifiedArg, ArgName] :
+       zip_equal(TC.Rec.getTemplateArgs(), TC.ArgNames))
+    CurScope->addVar(ArgName, ArgMap.lookup(QualifiedArg));
+
+  Lex.seekTo(TC.BodyStart, TC.BodyBuf, TC.BodyBuffer);
+  bool Failed = ParseObjectBody(NewRec);
+  if (!Failed)
+    PopScope(InstScope);
+
+  --TemplateInstDepth;
+  CurScope = std::move(SavedScope);
+  CurMultiClass = SavedMultiClass;
+  Loops = std::move(SavedLoops);
+  LetStack = std::move(SavedLetStack);
+  Lex.restoreState(std::move(SavedLex));
+
+  if (Failed) {
+    PrintNote(Loc, "instantiating '" + TC.Rec.getName() + "' here");
+    return nullptr;
+  }
+
+  // Inherit the primary template, so isSubClassOf(Name) holds. It is
+  // field-less and takes no arguments, so this adds identity and nothing else.
+  SubClassReference PrimaryRef;
+  PrimaryRef.RefRange = SMRange(Loc, Loc);
+  PrimaryRef.Rec = TC.Primary;
+  if (AddSubClass(NewRec, PrimaryRef))
+    return nullptr;
+
+  Records.addClass(std::move(NewRecOwner));
+  TC.Cache[Key] = NewRec;
+  return NewRec;
+}
+
 /// ParseLetList - Parse a non-empty list of assignment expressions into a list
 /// of LetRecords.
 ///
@@ -4754,6 +5046,12 @@ bool TGParser::ParseObject(MultiClass *MC) {
     if (!Loops.empty())
       return TokError("multiclass is not allowed inside foreach loop");
     return ParseMultiClass();
+  case tgtok::Template:
+    if (MC)
+      return TokError("template class is not allowed inside multiclass");
+    if (!Loops.empty())
+      return TokError("template class is not allowed inside foreach loop");
+    return ParseTemplateClass();
   }
 }
 

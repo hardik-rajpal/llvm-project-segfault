@@ -69,7 +69,8 @@ public:
     StringRecTyKind,
     ListRecTyKind,
     DagRecTyKind,
-    RecordRecTyKind
+    RecordRecTyKind,
+    ClassRecTyKind
   };
 
 private:
@@ -126,6 +127,38 @@ public:
   std::string getAsString() const override { return "bit"; }
 
   bool typeIsConvertibleTo(const RecTy *RHS) const override;
+};
+
+/// 'class' / 'class<Base>' - The type of a template argument whose values are
+/// classes rather than defs. An unbounded `class` accepts any class; a bounded
+/// `class<Base>` accepts only classes that are Base or inherit from it.
+class ClassRecTy : public RecTy {
+  friend detail::RecordKeeperImpl;
+
+  /// The upper bound, or null for an unbounded `class`.
+  const Record *Bound;
+
+  ClassRecTy(RecordKeeper &RK, const Record *Bound)
+      : RecTy(ClassRecTyKind, RK), Bound(Bound) {}
+
+public:
+  ClassRecTy(const ClassRecTy &) = delete;
+  ClassRecTy &operator=(const ClassRecTy &) = delete;
+
+  static bool classof(const RecTy *RT) {
+    return RT->getRecTyKind() == ClassRecTyKind;
+  }
+
+  /// Get the class type bounded by Bound, or the unbounded one if null.
+  LLVM_ABI static const ClassRecTy *get(RecordKeeper &RK, const Record *Bound);
+
+  const Record *getBound() const { return Bound; }
+
+  LLVM_ABI std::string getAsString() const override;
+
+  LLVM_ABI bool typeIsConvertibleTo(const RecTy *RHS) const override;
+
+  LLVM_ABI bool typeIsA(const RecTy *RHS) const override;
 };
 
 /// 'bits<n>' - Represent a fixed number of bits
@@ -304,6 +337,7 @@ protected:
     IK_FirstTypedInit,
     IK_BitInit,
     IK_BitsInit,
+    IK_ClassInit,
     IK_DagInit,
     IK_DefInit,
     IK_FieldInit,
@@ -1331,6 +1365,38 @@ public:
 
   const Init *getBit(unsigned Bit) const override {
     llvm_unreachable("Illegal bit reference off def");
+  }
+};
+
+/// Represent a class used as a value, e.g. the `InstRIEd` in
+/// `def D : W<InstRIEd, ...>`. The counterpart of DefInit for RK_Class
+/// records, which the surface language otherwise refuses to name in value
+/// position.
+class ClassInit final : public TypedInit {
+  friend detail::RecordKeeperImpl;
+
+  const Record *Class;
+
+  explicit ClassInit(const Record *C, const RecTy *Ty)
+      : TypedInit(IK_ClassInit, Ty), Class(C) {}
+
+public:
+  ClassInit(const ClassInit &) = delete;
+  ClassInit &operator=(const ClassInit &) = delete;
+
+  static bool classof(const Init *I) { return I->getKind() == IK_ClassInit; }
+
+  LLVM_ABI static const ClassInit *get(const Record *C);
+
+  const Record *getClass() const { return Class; }
+
+  LLVM_ABI const Init *convertInitializerTo(const RecTy *Ty) const override;
+
+  bool isConcrete() const override { return true; }
+  LLVM_ABI std::string getAsString() const override;
+
+  const Init *getBit(unsigned Bit) const override {
+    llvm_unreachable("Illegal bit reference off class");
   }
 };
 
