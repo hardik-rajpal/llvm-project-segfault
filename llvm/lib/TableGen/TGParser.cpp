@@ -1290,6 +1290,12 @@ const Init *TGParser::ParseIDValue(Record *CurRec, const StringInit *Name,
     return I;
   }
 
+  // Allow self-references of concrete defs, but delay the lookup so that we
+  // get the correct type.
+  if (CurRec && !CurRec->isClass() && !CurMultiClass &&
+      CurRec->getNameInit() == Name)
+    return UnOpInit::get(UnOpInit::CAST, Name, CurRec->getType());
+
   // A class named in value position, e.g. the `InstRIEd` in
   // `def D : W<InstRIEd, ...>`. Classes are Records just as defs are; only the
   // surface language used to refuse to name one here.
@@ -1298,12 +1304,6 @@ const Init *TGParser::ParseIDValue(Record *CurRec, const StringInit *Name,
       Class->appendReferenceLoc(NameLoc);
     return ClassInit::get(Class);
   }
-
-  // Allow self-references of concrete defs, but delay the lookup so that we
-  // get the correct type.
-  if (CurRec && !CurRec->isClass() && !CurMultiClass &&
-      CurRec->getNameInit() == Name)
-    return UnOpInit::get(UnOpInit::CAST, Name, CurRec->getType());
 
   Error(NameLoc.Start, "Variable not defined: '" + Name->getValue() + "'");
   return nullptr;

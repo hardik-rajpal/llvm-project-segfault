@@ -103,6 +103,9 @@ def OutLet : Plain<7>;
 // CHECK-NEXT:   bits<8> Inst = { enc{7}, enc{6}, ?, ?, ?, ?, enc{1}, enc{0} };
 // CHECK-NEXT:   bits<8> enc = { ?, ?, ?, ?, ?, ?, ?, ? };
 
+// CHECK:      def Shadow {
+// CHECK-NEXT:   string Self = "Shadow";
+
 // CHECK:      def WA {	// Fmt FmtA Wrap Wrap$0
 // CHECK-NEXT:   int Op = 1;
 // CHECK-NEXT:   int W = 16;
@@ -113,6 +116,11 @@ def OutLet : Plain<7>;
 // CHECK-NEXT:   int W = 32;
 // CHECK-NEXT:   FmtB self = ?;
 
+
+// A class named in value position is a last resort: a def of the same name
+// still wins, so this does not change what existing .td files mean.
+class Shadow { int Z = 1; }
+def Shadow { string Self = !cast<string>(Shadow); }
 
 #ifdef ERROR1
 // An unbounded `class` argument accepts any class.
