@@ -92,6 +92,8 @@ struct detail::RecordKeeperImpl {
   FoldingSet<CondOpInit> TheCondOpInitPool;
   FoldingSet<DagInit> TheDagInitPool;
   FoldingSet<RecordRecTy> RecordTypePool;
+  DenseMap<const Record *, ClassRecTy *> ClassTypePool;
+  DenseMap<const Record *, ClassInit *> TheClassInitPool;
 
   unsigned AnonCounter;
   unsigned LastRecordID;
@@ -231,6 +233,57 @@ static void ProfileRecordRecTy(FoldingSetNodeID &ID,
   ID.AddInteger(Classes.size());
   for (const Record *R : Classes)
     ID.AddPointer(R);
+}
+
+const ClassRecTy *ClassRecTy::get(RecordKeeper &RK, const Record *Bound) {
+  detail::RecordKeeperImpl &RKImpl = RK.getImpl();
+  ClassRecTy *&Ty = RKImpl.ClassTypePool[Bound];
+  if (!Ty)
+    Ty = new (RKImpl.Allocator) ClassRecTy(RK, Bound);
+  return Ty;
+}
+
+std::string ClassRecTy::getAsString() const {
+  if (!Bound)
+    return "class";
+  return "class<" + Bound->getNameInitAsString() + ">";
+}
+
+bool ClassRecTy::typeIsConvertibleTo(const RecTy *RHS) const {
+  const auto *RHSc = dyn_cast<ClassRecTy>(RHS);
+  if (!RHSc)
+    return false;
+  // Every class satisfies an unbounded `class`.
+  if (!RHSc->Bound)
+    return true;
+  if (!Bound)
+    return false;
+  return Bound == RHSc->Bound || Bound->isSubClassOf(RHSc->Bound);
+}
+
+// A bounded class type is a subtype of any bound it satisfies, so casting a
+// `class<FmtA>` value to `class<Fmt>` is a widening, not a conversion.
+bool ClassRecTy::typeIsA(const RecTy *RHS) const {
+  return typeIsConvertibleTo(RHS);
+}
+
+const ClassInit *ClassInit::get(const Record *C) {
+  detail::RecordKeeperImpl &RKImpl = C->getRecords().getImpl();
+  ClassInit *&I = RKImpl.TheClassInitPool[C];
+  if (!I)
+    I = new (RKImpl.Allocator)
+        ClassInit(C, ClassRecTy::get(C->getRecords(), C));
+  return I;
+}
+
+const Init *ClassInit::convertInitializerTo(const RecTy *Ty) const {
+  if (getType()->typeIsConvertibleTo(Ty))
+    return this;
+  return nullptr;
+}
+
+std::string ClassInit::getAsString() const {
+  return std::string(Class->getName());
 }
 
 RecordRecTy::RecordRecTy(RecordKeeper &RK, ArrayRef<const Record *> Classes)
